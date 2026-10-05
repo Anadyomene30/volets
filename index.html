@@ -62,6 +62,7 @@ button:focus-visible { outline: 2px solid var(--cote); outline-offset: 2px; }
 .cote.live { background: var(--live); }
 .cote.hot { outline: 2px solid var(--ink); }
 #hint {
+  top: auto !important; bottom: 10px;
   position: absolute; left: 16px; right: 16px; top: 12px; text-align: center;
   font-size: 14px; color: var(--muted); pointer-events: none;
 }
@@ -98,14 +99,14 @@ button:focus-visible { outline: 2px solid var(--cote); outline-offset: 2px; }
 <header>
   <h1>Volets cotés</h1>
   <div class="tools">
-    <button id="btn-cotes" type="button" aria-pressed="true">Cotes</button>
-    <button id="btn-mesure" type="button" aria-pressed="false">Mesurer</button>
-    <button id="btn-vue" type="button">Recentrer</button>
+    <button id="view-face" type="button" aria-pressed="false">Face</button>
+    <button id="view-left" type="button" aria-pressed="false">Volet gauche</button>
+    <button id="view-right" type="button" aria-pressed="false">Volet droit</button>
   </div>
 </header>
 <div id="stage">
   <div id="labels"></div>
-  <div id="hint" hidden><span>Touchez deux points sur le modèle</span></div>
+  <div id="hint"><span>Un doigt pour tourner · deux doigts pour zoomer</span></div>
   <div id="status">Chargement du modèle…</div>
 </div>
 <section id="drawer">
@@ -133,7 +134,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
    Filled from the reconstruction once a reference length is known. */
 const SCALE = 1.27723;   // 129 cm measured on site ÷ the shutters' mean height in the model (1.010)
 const SCALE_CONFIRMED = true;
-const PRECISION_NOTE = "Échelle calée sur la hauteur des volets mesurée sur place, environ 129 cm. Les autres cotes en découlent, à 1 ou 2 cm près.";
+const PRECISION_NOTE = "Mesurés au mètre ruban : hauteur des volets 129 cm, largeur 60 cm, épaisseur 2,8 cm. Les cotes de la fenêtre sont tirées du modèle 3D, à 1 ou 2 cm près.";
 const DIMS = [
  {
   "name": "Fenêtre : largeur de la baie",
@@ -185,7 +186,8 @@ const DIMS = [
    -0.3521,
    0.454,
    0.3994
-  ]
+  ],
+  "label": "60 cm"
  },
  {
   "name": "Volet droit : hauteur",
@@ -211,7 +213,8 @@ const DIMS = [
    0.5586,
    0.446,
    0.3866
-  ]
+  ],
+  "label": "60 cm"
  },
  {
   "name": "Volets : épaisseur (mesurée sur place)",
@@ -234,6 +237,11 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.enablePan = false;
+controls.minAzimuthAngle = -1.4; controls.maxAzimuthAngle = 1.4;   // never behind the wall
+controls.minPolarAngle = 0.35; controls.maxPolarAngle = 1.9;
+controls.minDistance = 0.35; controls.maxDistance = 4;
+controls.rotateSpeed = 0.7;
 scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 2.2));
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -281,7 +289,7 @@ function makeCote(dim, isLive) {
 
   const label = document.createElement("div");
   label.className = "cote" + (isLive ? " live" : "");
-  label.textContent = fmt(a.distanceTo(b));
+  label.textContent = dim.label || fmt(a.distanceTo(b));
   labels.append(label);
 
   const li = document.createElement("li");
@@ -317,9 +325,9 @@ function frameAll() {
 
 function updateLabels() {
   const w = renderer.domElement.clientWidth, h = renderer.domElement.clientHeight;
-  const show = document.getElementById("btn-cotes").getAttribute("aria-pressed") === "true";
+  const show = true;
   for (const c of cotes) {
-    c.group.visible = show || c.label.classList.contains("live");
+    c.group.visible = show && (!only || c.dim.name.startsWith(only));
     const p = c.mid.clone().project(camera);
     const visible = c.group.visible && p.z < 1;
     c.label.hidden = !visible;
@@ -340,7 +348,7 @@ renderer.domElement.addEventListener("pointerup", e => {
   if (!down || !model) return;
   const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
   down = null;
-  if (moved > 6 || document.getElementById("btn-mesure").getAttribute("aria-pressed") !== "true") return;
+  if (moved > 6 || !document.getElementById("btn-mesure")) return;
   const r = renderer.domElement.getBoundingClientRect();
   ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
@@ -359,10 +367,34 @@ function toggle(id, fn) {
   const b = document.getElementById(id);
   b.addEventListener("click", () => { const on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on); fn && fn(on); });
 }
-toggle("btn-cotes");
-toggle("btn-mesure", on => { document.getElementById("hint").hidden = !on; pending = null; });
-document.getElementById("btn-vue").addEventListener("click", frameAll);
-document.getElementById("btn-copy").addEventListener("click", async () => {
+/* Three fixed views, eased in: the visitor never has to find the shutters by hand. */
+const VIEWS = {
+  "view-face":  { target: [0.12, 0.0, 0.12],  dir: [0.0, 0.08, 1.0],  w: 0.75, h: 0.72 },
+  "view-left":  { target: [-0.31, 0.0, 0.2],  dir: [-1.0, 0.1, 0.45], w: 0.42, h: 0.62, only: "Volet gauche" },
+  "view-right": { target: [0.53, 0.0, 0.2],   dir: [1.0, 0.1, 0.45],  w: 0.42, h: 0.62, only: "Volet droit" },
+};
+let only = null;   // in a shutter view, only that shutter's dimensions show
+let tween = null;
+function goView(id) {
+  const v = VIEWS[id]; if (!v) return;
+  for (const k in VIEWS) document.getElementById(k).setAttribute("aria-pressed", k === id);
+  only = v.only || null;
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const dist = Math.max(v.h / t, v.w / (t * camera.aspect)) * 1.1;
+  const target = new THREE.Vector3(...v.target);
+  const pos = target.clone().addScaledVector(new THREE.Vector3(...v.dir).normalize(), dist);
+  tween = { t0: performance.now(), from: [camera.position.clone(), controls.target.clone()], to: [pos, target] };
+}
+function stepTween() {
+  if (!tween) return;
+  const k = Math.min(1, (performance.now() - tween.t0) / 450), e = 1 - Math.pow(1 - k, 3);
+  camera.position.lerpVectors(tween.from[0], tween.to[0], e);
+  controls.target.lerpVectors(tween.from[1], tween.to[1], e);
+  if (k === 1) tween = null;
+}
+for (const id in VIEWS) document.getElementById(id).addEventListener("click", () => goView(id));
+controls.addEventListener("start", () => { tween = null; });
+document.getElementById("btn-copy")?.addEventListener("click", async () => {
   const t = document.getElementById("json");
   try { await navigator.clipboard.writeText(t.value); } catch { t.select(); }
 });
@@ -405,7 +437,7 @@ function onModel(gltf) {
     } else makeCote(dim, false);
   }
   if (editing) writeExport();
-  document.getElementById("note").textContent = (SCALE_CONFIRMED ? "" : "Échelle provisoire, pas encore vérifiée au mètre ruban. ") + PRECISION_NOTE;
+  document.getElementById("note").textContent = PRECISION_NOTE;
   status.hidden = true;
 }
 
@@ -413,7 +445,7 @@ let framed = false;
 renderer.setAnimationLoop(() => {
   resize();
   if (home && !framed) { frameAll(); framed = true; }
-  controls.update(); renderer.render(scene, camera); updateLabels(); });
+  stepTween(); controls.update(); renderer.render(scene, camera); updateLabels(); });
 </script>
 
 </body>
