@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Volets cotés</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap">
+<style>
+/* Layout: one screen — the 3D model fills it, a bar on top, the list of dimensions as a drawer at the bottom. */
+:root {
+  --bg: #e9ecef;
+  --panel: #ffffff;
+  --ink: #1d232b;
+  --muted: #5d6874;
+  --line: #d3d9df;
+  --cote: #1f4fd1;
+  --cote-ink: #ffffff;
+  --live: #c2410c;
+  --font-ui: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191e; --panel: #1e242b; --ink: #e8ecf0; --muted: #9aa5b1; --line: #313a44;
+    --cote: #6e95ff; --cote-ink: #0b1220; --live: #fb923c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191e; --panel: #1e242b; --ink: #e8ecf0; --muted: #9aa5b1; --line: #313a44;
+  --cote: #6e95ff; --cote-ink: #0b1220; --live: #fb923c; color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: var(--font-ui); font-size: 16px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: .01em; flex: 1 1 auto; }
+header .tools { display: flex; gap: 8px; }
+button {
+  font: inherit; font-size: 15px; font-weight: 500; color: var(--ink);
+  background: transparent; border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 12px; cursor: pointer; min-height: 38px;
+}
+button[aria-pressed="true"] { background: var(--cote); border-color: var(--cote); color: var(--cote-ink); }
+button:focus-visible { outline: 2px solid var(--cote); outline-offset: 2px; }
+#stage { position: relative; flex: 1 1 auto; min-height: 0; touch-action: none; }
+#stage canvas { display: block; width: 100%; height: 100%; }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.cote {
+  position: absolute; transform: translate(-50%, -50%);
+  background: var(--cote); color: var(--cote-ink); border-radius: 4px;
+  padding: 2px 7px; font-size: 14px; font-weight: 600; white-space: nowrap;
+  font-variant-numeric: tabular-nums; pointer-events: auto; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,.25);
+}
+.cote.live { background: var(--live); }
+.cote.hot { outline: 2px solid var(--ink); }
+#hint {
+  position: absolute; left: 16px; right: 16px; top: 12px; text-align: center;
+  font-size: 14px; color: var(--muted); pointer-events: none;
+}
+#hint span { background: var(--panel); padding: 5px 10px; border-radius: 6px; border: 1px solid var(--line); }
+#status {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--muted); font-size: 16px; padding-inline: 16px; text-align: center;
+}
+#drawer {
+  background: var(--panel); border-top: 1px solid var(--line);
+  max-height: 38%; overflow-y: auto; padding: 8px 16px 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+#drawer h2 {
+  margin: 4px 0 6px; font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted);
+}
+#list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); column-gap: 24px; }
+#list li {
+  display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+  padding: 7px 0; border-bottom: 1px solid var(--line); cursor: pointer; min-width: 0;
+}
+#list li .n { min-width: 0; overflow-wrap: anywhere; }
+#list li .v { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--cote); white-space: nowrap; }
+#list li.live .v { color: var(--live); }
+#note { margin: 8px 0 0; font-size: 13px; color: var(--muted); max-width: 65ch; }
+#export { margin-top: 8px; }
+#export textarea { width: 100%; box-sizing: border-box; height: 90px; font: 12px ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+
+
+<header>
+  <h1>Volets cotés</h1>
+  <div class="tools">
+    <button id="btn-cotes" type="button" aria-pressed="true">Cotes</button>
+    <button id="btn-mesure" type="button" aria-pressed="false">Mesurer</button>
+    <button id="btn-vue" type="button">Recentrer</button>
+  </div>
+</header>
+<div id="stage">
+  <div id="labels"></div>
+  <div id="hint" hidden><span>Touchez deux points sur le modèle</span></div>
+  <div id="status">Chargement du modèle…</div>
+</div>
+<section id="drawer">
+  <h2>Dimensions</h2>
+  <ul id="list"></ul>
+  <p id="note"></p>
+  <div id="export" hidden>
+    <button id="btn-copy" type="button">Copier les cotes</button>
+    <textarea id="json" readonly></textarea>
+  </div>
+</section>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+/* Dimensions in model units; SCALE turns a model unit into metres.
+   Filled from the reconstruction once a reference length is known. */
+const SCALE = 1.27723;   // 129 cm measured on site ÷ the shutters' mean height in the model (1.010)
+const SCALE_CONFIRMED = true;
+const PRECISION_NOTE = "Échelle calée sur la hauteur des volets mesurée sur place, environ 129 cm. Les autres cotes en découlent, à 1 ou 2 cm près.";
+const DIMS = [
+ {
+  "name": "Fenêtre : largeur de la baie",
+  "a": [
+   -0.252,
+   0.555,
+   0.01
+  ],
+  "b": [
+   0.496,
+   0.555,
+   0.01
+  ]
+ },
+ {
+  "name": "Fenêtre : hauteur de la baie",
+  "a": [
+   0.12,
+   -0.492,
+   0.0
+  ],
+  "b": [
+   0.12,
+   0.505,
+   0.0
+  ]
+ },
+ {
+  "name": "Volet gauche : hauteur",
+  "a": [
+   -0.3521,
+   -0.498,
+   0.3994
+  ],
+  "b": [
+   -0.3521,
+   0.514,
+   0.3994
+  ]
+ },
+ {
+  "name": "Volet gauche : largeur",
+  "a": [
+   -0.2507,
+   0.454,
+   -0.0103
+  ],
+  "b": [
+   -0.3521,
+   0.454,
+   0.3994
+  ]
+ },
+ {
+  "name": "Volet gauche : épaisseur",
+  "a": [
+   -0.3214,
+   -0.468,
+   0.3967
+  ],
+  "b": [
+   -0.3779,
+   -0.468,
+   0.3827
+  ]
+ },
+ {
+  "name": "Volet droit : hauteur",
+  "a": [
+   0.5586,
+   -0.502,
+   0.3866
+  ],
+  "b": [
+   0.5586,
+   0.506,
+   0.3866
+  ]
+ },
+ {
+  "name": "Volet droit : largeur",
+  "a": [
+   0.4918,
+   0.446,
+   -0.0118
+  ],
+  "b": [
+   0.5586,
+   0.446,
+   0.3866
+  ]
+ },
+ {
+  "name": "Volet droit : épaisseur",
+  "a": [
+   0.5831,
+   -0.472,
+   0.3724
+  ],
+  "b": [
+   0.5307,
+   -0.472,
+   0.3811
+  ]
+ }
+];
+
+const stage = document.getElementById("stage");
+const labels = document.getElementById("labels");
+const list = document.getElementById("list");
+const status = document.getElementById("status");
+const editing = location.hash === "#edition";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+stage.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 2.2));
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const fmt = (units) => {
+  return Math.round(units * SCALE * 100) + " cm";
+};
+
+let model = null, home = null;
+const cotes = [];            // { dim, group, label, li }
+let live = [];               // measures made by the viewer, not saved
+let pending = null;          // first point of a measure in progress
+
+/* Called every frame: cheap, and right even when the stage settles after the model loads. */
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return false;
+  const c = renderer.domElement;
+  if (c.width !== Math.round(w * renderer.getPixelRatio()) || c.height !== Math.round(h * renderer.getPixelRatio())) {
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    return true;
+  }
+  return false;
+}
+
+function makeCote(dim, isLive) {
+  const a = new THREE.Vector3(...dim.a), b = new THREE.Vector3(...dim.b);
+  const color = new THREE.Color(css(isLive ? "--live" : "--cote"));
+  const group = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9 });
+  const len = a.distanceTo(b);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, len, 8), mat);
+  bar.position.copy(a).add(b).multiplyScalar(0.5);
+  bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+  bar.renderOrder = 2; group.add(bar);
+  const dot = new THREE.SphereGeometry(1, 12, 8);
+  const r = 0.009;
+  for (const p of [a, b]) {
+    const m = new THREE.Mesh(dot, new THREE.MeshBasicMaterial({ color, depthTest: false }));
+    m.position.copy(p); m.scale.setScalar(r); m.renderOrder = 2; group.add(m);
+  }
+  group.renderOrder = 2;
+  scene.add(group);
+
+  const label = document.createElement("div");
+  label.className = "cote" + (isLive ? " live" : "");
+  label.textContent = fmt(a.distanceTo(b));
+  labels.append(label);
+
+  const li = document.createElement("li");
+  if (isLive) li.className = "live";
+  li.innerHTML = `<span class="n"></span><span class="v"></span>`;
+  li.querySelector(".n").textContent = dim.name;
+  li.querySelector(".v").textContent = label.textContent;
+  list.append(li);
+
+  const c = { dim, group, label, li, mid: a.clone().add(b).multiplyScalar(0.5), len: a.distanceTo(b) };
+  const focus = () => frame(c);
+  label.addEventListener("click", focus);
+  li.addEventListener("click", focus);
+  cotes.push(c);
+  return c;
+}
+
+function frame(c) {
+  for (const o of cotes) o.label.classList.toggle("hot", o === c);
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  controls.target.copy(c.mid);
+  camera.position.copy(c.mid).addScaledVector(dir, c.len * 1.6 + 0.05);
+}
+
+/* The window and both shutters, about 1.2 × 1.2 model units, fitted to the screen whatever its shape. */
+function frameAll() {
+  if (!home) return;
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const dist = Math.max(0.65 / t, 0.7 / (t * camera.aspect)) * 1.05;
+  controls.target.copy(home.target);
+  camera.position.copy(home.target).addScaledVector(home.dir, dist);
+}
+
+function updateLabels() {
+  const w = renderer.domElement.clientWidth, h = renderer.domElement.clientHeight;
+  const show = document.getElementById("btn-cotes").getAttribute("aria-pressed") === "true";
+  for (const c of cotes) {
+    c.group.visible = show || c.label.classList.contains("live");
+    const p = c.mid.clone().project(camera);
+    const visible = c.group.visible && p.z < 1;
+    c.label.hidden = !visible;
+    if (visible) c.label.style.left = ((p.x + 1) / 2 * w) + "px", c.label.style.top = ((1 - p.y) / 2 * h) + "px";
+  }
+}
+
+function writeExport() {
+  const out = cotes.map(c => ({ name: c.dim.name, a: c.dim.a.map(v => +v.toFixed(4)), b: c.dim.b.map(v => +v.toFixed(4)) }));
+  document.getElementById("json").value = JSON.stringify(out, null, 1);
+}
+
+/* Measuring: two taps on the mesh. A drag rotates the view and is not a tap. */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let down = null;
+renderer.domElement.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener("pointerup", e => {
+  if (!down || !model) return;
+  const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
+  down = null;
+  if (moved > 6 || document.getElementById("btn-mesure").getAttribute("aria-pressed") !== "true") return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(model, true)[0];
+  if (!hit) return;
+  const p = hit.point.toArray();
+  if (!pending) { pending = p; document.querySelector("#hint span").textContent = "Touchez le second point"; return; }
+  const name = "Mesure " + (live.length + 1);
+  live.push(makeCote({ name, a: pending, b: p }, !editing));
+  pending = null;
+  document.querySelector("#hint span").textContent = "Touchez deux points sur le modèle";
+  if (editing) writeExport();
+});
+
+function toggle(id, fn) {
+  const b = document.getElementById(id);
+  b.addEventListener("click", () => { const on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on); fn && fn(on); });
+}
+toggle("btn-cotes");
+toggle("btn-mesure", on => { document.getElementById("hint").hidden = !on; pending = null; });
+document.getElementById("btn-vue").addEventListener("click", frameAll);
+document.getElementById("btn-copy").addEventListener("click", async () => {
+  const t = document.getElementById("json");
+  try { await navigator.clipboard.writeText(t.value); } catch { t.select(); }
+});
+if (editing) { document.getElementById("export").hidden = false; window.__v = { THREE, camera, controls, scene, get model() { return model; } }; }
+
+/* The model ships as base64 text: the artifact host serves .txt, not .glb. */
+fetch("model.txt").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); }).then(b64 => {
+  const bin = atob(b64.replace(/\s+/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  new GLTFLoader().parse(bytes.buffer, "", onModel, onFail);
+}).catch(onFail);
+function onFail() { status.textContent = "Le modèle n'a pas pu se charger. Rechargez la page."; }
+function onModel(gltf) {
+  model = gltf.scene;
+  /* The texture ships as its own .jpg, loaded through an <img>: the artifact host refuses
+     the fetch() of a blob: URL that GLTFLoader uses to decode an image embedded in a GLB. */
+  const skin = new THREE.MeshBasicMaterial({ color: 0xbfbfbf, side: THREE.DoubleSide });
+  model.traverse(o => { if (o.isMesh) o.material = skin; });
+  new THREE.TextureLoader().load("texture.jpg", tex => {
+    tex.flipY = false;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    skin.map = tex; skin.color.set(0xffffff); skin.needsUpdate = true;
+  });
+  scene.add(model);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+  const d = Math.max(size.x, size.y, size.z);
+  camera.near = d / 500; camera.far = d * 50; camera.updateProjectionMatrix();
+  const win = new THREE.Vector3(0.12, 0.0, 0.15);
+  home = { target: win, dir: new THREE.Vector3(0.4, 0.15, 1).normalize() };
+  for (const dim of DIMS) makeCote(dim, false);
+  if (editing) writeExport();
+  document.getElementById("note").textContent = (SCALE_CONFIRMED ? "" : "Échelle provisoire, pas encore vérifiée au mètre ruban. ") + PRECISION_NOTE;
+  status.hidden = true;
+}
+
+let framed = false;
+renderer.setAnimationLoop(() => {
+  resize();
+  if (home && !framed) { frameAll(); framed = true; }
+  controls.update(); renderer.render(scene, camera); updateLabels(); });
+</script>
+
+</body>
+</html>
