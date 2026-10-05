@@ -188,19 +188,6 @@ const DIMS = [
   ]
  },
  {
-  "name": "Volet gauche : épaisseur",
-  "a": [
-   -0.3214,
-   -0.468,
-   0.3967
-  ],
-  "b": [
-   -0.3779,
-   -0.468,
-   0.3827
-  ]
- },
- {
   "name": "Volet droit : hauteur",
   "a": [
    0.5586,
@@ -227,17 +214,8 @@ const DIMS = [
   ]
  },
  {
-  "name": "Volet droit : épaisseur",
-  "a": [
-   0.5831,
-   -0.472,
-   0.3724
-  ],
-  "b": [
-   0.5307,
-   -0.472,
-   0.3811
-  ]
+  "name": "Volets : épaisseur (mesurée sur place)",
+  "value": "2,8 cm"
  }
 ];
 
@@ -417,7 +395,15 @@ function onModel(gltf) {
   camera.near = d / 500; camera.far = d * 50; camera.updateProjectionMatrix();
   const win = new THREE.Vector3(0.12, 0.0, 0.15);
   home = { target: win, dir: new THREE.Vector3(0.4, 0.15, 1).normalize() };
-  for (const dim of DIMS) makeCote(dim, false);
+  for (const dim of DIMS) {
+    if (dim.value) {   // measured on site, not drawn on the model
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="n"></span><span class="v"></span>`;
+      li.querySelector(".n").textContent = dim.name;
+      li.querySelector(".v").textContent = dim.value;
+      list.append(li);
+    } else makeCote(dim, false);
+  }
   if (editing) writeExport();
   document.getElementById("note").textContent = (SCALE_CONFIRMED ? "" : "Échelle provisoire, pas encore vérifiée au mètre ruban. ") + PRECISION_NOTE;
   status.hidden = true;
